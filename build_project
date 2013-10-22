@@ -11,6 +11,7 @@ from jira_xml import items2dict
 _DEV = 'dev_done_workdays'
 _PROD = 'prod_done_workdays'
 
+#TODO: vacation and holiday support
 def main(rss_feed, start_dates=None):
     '''Project looks like:
         {

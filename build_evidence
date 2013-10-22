@@ -10,6 +10,7 @@ import numpy
 from workdays import net_workdays
 from jira_xml import items2dict
 
+#TODO: vacation and holiday support
 _DEV = 'dev_done_workdays'
 _PROD = 'prod_done_workdays'
 

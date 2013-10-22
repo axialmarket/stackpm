@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+# TODO:
+#  better CLI interface
+#  error handling
+#  evidence decay
+#  prod_done when dev_done is set and method is non-sample
+#  dependencies handling
+#  CDF graphing (maybe another program)
+#  automatic weekly dashboard (maybe another program)
 
 import random
 import sys
@@ -171,6 +179,10 @@ def main(method, evidence, project, plays, start_date=None, holidays=None,
                     dev_done = max(
                         variate(*_mean_stddev(sim, _DEV)), 0.2)
                 if not prod_done:
+                    #TODO: prod_done might be statistically improbable if
+                    # dev_done is set and is an outlier, may need to exit
+                    # after some number of tries, and take another route to
+                    # computing it.
                     prod_done = 0
                     prod_mean, prod_stddev = _mean_stddev(sim, _PROD)
                     while prod_done < dev_done:
