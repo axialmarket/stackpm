@@ -1,0 +1,81 @@
+#!/usr/bin/env python
+import sys
+import math
+import json
+
+from datetime import date
+
+import numpy
+
+from workdays import net_workdays
+from jira_xml import items2dict
+
+_DEV = 'dev_done_workdays'
+_PROD = 'prod_done_workdays'
+
+def main(rss_feed, holidays=None, vacation=None):
+    '''Evidence looks like:
+        { "assignee": {
+            "small": {
+                'dev_done_workdays_mean': 0.6780,
+                'dev_done_workdays_stddev': 0.1111111,
+                'dev_done_workdays_median': 1,
+                'prod_done_workdays_mean': 2.897666,
+                'prod_done_workdays_stddev': 0.33333333,
+                'prod_done_workdays_median': 3,
+                'evidence': [
+                    {
+                      'estimate': "small",
+                      'dev_done_workdays': 1,
+                      'prod_done_workdays': 3,
+                      'started_date': '2013-10-17 00:00:00',
+                      'ready_for_qa_date': '2013-10-18 00:00:00',
+                      'shipped_date': '2013-10-20 00:00:00'
+                    }
+                ]
+            },
+            "medium": {
+                #...
+            },
+            "large": {
+                #...
+            }
+        }}
+    '''
+    evidence = {}
+    time_fmt = '%Y-%m-%d %H:%M:%S'
+    for item in items2dict(rss_feed):
+        item[_DEV] = net_workdays(item['dev_start'], item['dev_done'])
+        item[_PROD] = net_workdays(item['dev_start'], item['prod_done'])
+        for k,v in item.iteritems():
+            if isinstance(v, date):
+                item[k] = v.strftime(time_fmt)
+        evidence.setdefault(item['assignee'], {}).setdefault(
+            item['estimate'].lower(), []).append(item)
+
+    for eng,data in evidence.iteritems():
+        for est,observed in data.iteritems():
+            new_evidence = { 'evidence': observed, }
+            #TODO: aggs by est, not overall
+            for type_ in ( _DEV, _PROD, ):
+                lead_times = numpy.array([ datum[type_] for datum in observed ])
+                mean = numpy.mean(lead_times, axis=0)
+                stddev = numpy.std(lead_times, axis=0)
+                stderr = stddev / math.sqrt(len(lead_times))
+
+                # compute some stats convenience aggregates
+                new_evidence['{}_mean'.format(type_)] = mean
+                new_evidence['{}_stddev'.format(type_)] = stddev
+                new_evidence['{}_median'.format(type_)] = \
+                    numpy.median(lead_times, axis=0)
+                new_evidence['{}_stderr'.format(type_)] = stderr
+                # 95% mean confidence interval
+                new_evidence['{}_conf_int'.format(type_)] = stderr*1.96
+
+            # reset evidence with aggregates
+            evidence[eng][est] = new_evidence
+
+    print json.dumps(evidence)
+
+if __name__ == '__main__':
+    sys.exit(main(*sys.argv[1:]))

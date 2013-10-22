@@ -1,0 +1,224 @@
+#!/usr/bin/env python
+
+import random
+import sys
+import json
+
+
+from datetime import datetime
+from math import ceil, floor, log, sqrt
+
+from workdays import workday
+
+_DEV = 'dev_done_workdays'
+_PROD = 'prod_done_workdays'
+
+def _pick_mean(mu, conf, stderr):
+    '''pick a mean within a confidence interval'''
+    est_mu = None
+    while est_mu is None or not (est_mu >= mu - conf and est_mu <= mu + conf):
+        est_mu = max(random.normalvariate(mu, conf), 1)
+    return est_mu
+
+def _mean_stddev(src, prefix):
+    return src['{}_mean'.format(prefix)], src['{}_stddev'.format(prefix)]
+
+def _set_mean_stddev(dst, prefix, mean, stddev):
+    dst['{}_mean'.format(prefix)]= mean
+    dst['{}_stddev'.format(prefix)] = stddev
+    return dst
+
+def main(method, evidence, project, plays, start_date=None, holidays=None,
+         vacation=None):
+    '''
+        method is one of (from least to most conservative algo):
+            normal               # gaussian dist
+            normal-confidence    # gaussian with mean selected from 95% mean
+                                 # confidence
+            lognormal            # lognormal dist -- fat tail
+            lognormal-confidence # lognormal dist with mean selected from 95%
+                                 # mean confidence -- fat tail
+            sample               # sample from observed evidence -- best
+                                 # statistically
+        evidence is a json file like this:
+        { "assignee": {
+            "small": {
+                'time_to_qa_mean': 0.6780,
+                'time_to_qa_stddev': 0.1111111,
+                'time_to_qa_median': 1,
+                'time_to_qa_stderr': 0.00001111,
+                'time_to_qa_conf_int': 0.0011111,
+                'lead_time_mean': 2.897666,
+                'lead_time_stddev': 0.33333333,
+                'lead_time_median': 3,
+                'lead_time_stderr': 0.003333333,
+                'lead_time_conf_int': 0.0333333,
+                'evidence': [
+                    {
+                      'estimate': "small",
+                      'time_to_qa': 1,
+                      'lead_time': 3,
+                      'started_date': '2013-10-17 00:00:00',
+                      'ready_for_qa_date': '2013-10-18 00:00:00',
+                      'shipped_date': '2013-10-20 00:00:00'
+                    }
+                ]
+            },
+            "medium": {
+                #...
+            },
+            "large": {
+                #...
+            }
+        }}
+       project is a json file like this:
+       [
+           {                                          # per story
+               'id': 'UNIQUE str or int',
+               'depends': [ 'str or int UNIQUE id' ], # etc
+               'engineer': 'matt',
+               'size': 'S'
+           }, #...
+           {                                          # per story
+               'id': 'UNIQUE str or int',
+               'depends': [ 'str or int UNIQUE id' ], # etc
+               'engineer': 'matt',
+               'size': 'S',
+               'shipped': '2012-10-20 00:00:00' # a done story
+           }, #...
+       ]
+       plays is an integer which signifies the number of simulations to run
+    '''
+    # setup
+    plays = int(plays)
+    start_date = start_date or datetime.now()
+    date_fmt = '%Y-%m-%d %H:%M:%S'
+    if evidence == "-":
+        evidence = json.load(sys.stdin)
+    else:
+        with open(evidence, 'r+U') as evidence_f:
+            evidence = json.load(evidence_f)
+    if project == "-":
+        project = json.load(sys.stdin)
+    else:
+        with open(project, 'r+U') as project_f:
+            project = json.load(project_f)
+
+    if holidays is not None:
+        with open(holidays, 'r+U') as holidays_f:
+            holidays = set()
+            for holiday in json.load(holidays_f):
+                holidays.add(datetime.strptime(holiday, date_fmt))
+    else:
+        holidays = set()
+
+    if vacation is not None:
+        with open(vacation, 'r+U') as vacation_f:
+            vacation = {}
+            for eng,vacations in json.load(vacation_f).iteritems():
+                vacation_dts = set()
+                for day in vacations:
+                    vacation_dts.add(datetime.strptime(day, date_fmt))
+                vacation[eng] = vacation_dts
+    else:
+        vacation = {}
+
+
+    # staggered start support
+    start_dates = {}
+    for item in project['items']:
+        eng_start = item.get('dev_start')
+        if eng_start:
+            eng = item['assignee'].lower()
+            eng_start = datetime.strptime(eng_start, date_fmt)
+            start_dates[eng] = min(eng_start, start_dates.get(eng, eng_start))
+
+    for eng,eng_start in project.get('start_dates', {}).iteritems():
+        start_dates.setdefault(eng, datetime.strptime(eng_start, date_fmt))
+
+    # simulate
+    results = []
+    for i in xrange(plays):
+        timeline = {}
+        for story in project["items"]:
+            eng = story['assignee'].lower()
+            variate = random.normalvariate
+            if method.startswith('lognormal'):
+                variate = random.lognormvariate
+            dev_time, prod_time = timeline.get(eng, ( 0, 0, ))
+            dev_done, prod_done = story.get(_DEV), story.get(_PROD)
+            szhist = evidence[eng][story['estimate'].lower()]
+            if not (dev_done and prod_done) and method != 'sample':
+                sim = {}
+                for type_ in ( _DEV, _PROD, ):
+                    # copy mu and sigma from szhist to sim
+                    _set_mean_stddev(sim, type_, *_mean_stddev(szhist, type_))
+                    # if we need to confidence adjust, override mean
+                    if method.endswith('-confidence'):
+                        sim['{}_mean'.format(type_)] = \
+                            _pick_mean(szhist['{}_mean'.format(type_)],
+                                       szhist['{}_conf_int'.format(type_)],
+                                       szhist['{}_stderr'.format(type_)])
+                    if method.startswith('lognormal'):
+                        # create lognorm mean and stddev from normal
+                        mean, stddev = _mean_stddev(sim, type_)
+                        stddev = sqrt(log(1 + pow(stddev, 2) / pow(mean, 2)))
+                        _set_mean_stddev(sim, type_,
+                                         log(mean) - pow(stddev, 2)/2, stddev)
+
+                # lowest permissible dev done time is 1/5 day
+                if not dev_done:
+                    dev_done = max(
+                        variate(*_mean_stddev(sim, _DEV)), 0.2)
+                if not prod_done:
+                    prod_done = 0
+                    prod_mean, prod_stddev = _mean_stddev(sim, _PROD)
+                    while prod_done < dev_done:
+                        # lowest permissible time to prod is full-day
+                        prod_done = max(ceil(variate(prod_mean, prod_stddev)), 1)
+            elif not (dev_done and prod_done):
+                # if we have part of the data
+                if dev_done:
+                    relevant = []
+                    for ev in szhist['evidence']:
+                        if ev[_DEV] >= dev_done:
+                            relevant.append({ _DEV: dev_done,
+                                              _PROD: ev[_PROD], })
+                    # if no relevant data applies, sample a prod/dev ratio
+                    if not relevant:
+                        sample = random.choice(szhist['evidence'])
+                        ratio = float(sample[_PROD]) / float(sample[_DEV])
+                        relevant.append({ _DEV: dev_done,
+                                          _PROD: ceil(dev_done*ratio), })
+                else:
+                    relevant = szhist['evidence']
+
+                sample = random.choice(relevant)
+                dev_done, prod_done = sample[_DEV], sample[_PROD]
+
+            timeline[eng] = ( dev_time + dev_done,
+                              max(ceil(dev_time + prod_done), prod_time), )
+
+        # figure out dates, accounting for holidays and vacations
+        stop = None
+        for eng,times in timeline.iteritems():
+            eng_stop = workday(start_dates.get(eng, start_date), times[1],
+                               excludes=vacation.get(eng, set())&holidays)
+            if stop is None or eng_stop > stop:
+                stop = eng_stop
+
+        results.append(stop)
+
+    results.sort()
+    for res in results:
+        print res
+
+    # print confidence intervals:
+    for conf in ( .5, .75, .98, ):
+        print "{}% confidence: {}".format(conf*100,
+                                          results[int(floor(plays*conf))])
+
+
+if __name__ == '__main__':
+    # TODO: clean up CLI, add-in start-date option
+    sys.exit(main(*sys.argv[1:]))
