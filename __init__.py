@@ -1,8 +1,8 @@
-'''stack/__init__.py -- wraps stack in a bow
+'''stackpm/__init__.py -- wraps stackpm in a bow
 
-   To run stack in debug mode:
+   To run stackpm in debug mode:
 
-     python -m stack.app
+     python -m stackpm.app
 
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)
@@ -10,8 +10,9 @@
 '''
 
 # ORDER MATTERS HERE -- SOME MODULES ARE DEPENDANT ON OTHERS
-from app import stack_app, config, db
+from app import stackpm_app, config, db
 
+import fields
 import models
 
-__all__ = [ 'stack_app', 'config', 'db', 'models', ]
+__all__ = [ 'stackpm_app', 'config', 'db', 'models', 'fields', ]

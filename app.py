@@ -1,7 +1,7 @@
-'''stack/app.py -- config and flask application setup for stack.
+'''stackpm/app.py -- config and flask application setup for stackpm.
 
    methods: cfg2obj
-   objects: stack_app, config, db
+   objects: stackpm_app, config, db
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)
 '''
@@ -16,9 +16,9 @@ from flask import Flask
 from flask.ext.sqlalchemy import SQLAlchemy
 
 ### GLOBALS
-STACK_CONFIG_ENV = 'STACK_CONFIG'
-#TODO: reset to /etc/stack/stack.cfg
-STACK_CONFIG_DFLT = '/home/matt/src/stack/src/default.cfg' # '/etc/stack/stack.cfg'
+STACKPM_CONFIG_ENV = 'STACKPM_CONFIG'
+#TODO: reset
+STACKPM_CONFIG_DFLT = '/home/matt/src/stackpm/src/default.cfg' # '/etc/stackpm.cfg
 
 ### EXPOSED METHODS
 def cfg2obj(cfg_path):
@@ -47,15 +47,15 @@ def cfg2obj(cfg_path):
 ### EXPOSED MODULE LEVEL ATTRIBUTES
 
 # void-scope execution is bad, but it's kind of the point here
-config = cfg2obj(os.environ.get(STACK_CONFIG_ENV, STACK_CONFIG_DFLT))
+config = cfg2obj(os.environ.get(STACKPM_CONFIG_ENV, STACKPM_CONFIG_DFLT))
 
-stack_app = Flask('stack')
-stack_app.config.update(config)
-if stack_app.config['SERVER']['debug']:
-    stack_app.debug = True
+stackpm_app = Flask('stackpm')
+stackpm_app.config.update(config)
+if stackpm_app.config['SERVER']['debug']:
+    stackpm_app.debug = True
 
-db = SQLAlchemy(stack_app)
+db = SQLAlchemy(stackpm_app)
 
 if __name__ == '__main__':
-    stack_app.run(host=config['SERVER']['host'],
+    stackpm_app.run(host=config['SERVER']['host'],
                   port=config['SERVER']['port'])
