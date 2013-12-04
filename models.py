@@ -66,12 +66,12 @@ class Iteration(db.Model):
     def __repr__(self):
         return '<Iteration {}>'.format(self.name)
 
+# m2m self-join through table for dependency tracking between tasks
 task_dependencies = db.Table('executiontask_dependency', db.metadata,
                              db.Column('blocks_id', db.Integer,
                                        db.ForeignKey('execution_task.id')),
                              db.Column('blocked_id', db.Integer,
-                                       db.ForeignKey('execution_task.id'))
-        )
+                                       db.ForeignKey('execution_task.id')))
 
 class ExecutionTask(db.Model):
     '''Model for execution items, which will typically be 'Stories' or 'Cards'
