@@ -1,0 +1,8 @@
+1. setup.py
+--> Dependencies are in __init__.py
+--> Build /etc/stack.cfg file
+--> Install /var/stack dir
+--> Potentially install sync tasks to /etc/crontab
+
+2. Jira Sync => Use `requests` library
+3. Front-End
