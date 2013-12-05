@@ -17,8 +17,7 @@ from flask.ext.sqlalchemy import SQLAlchemy
 
 ### GLOBALS
 STACKPM_CONFIG_ENV = 'STACKPM_CONFIG'
-#TODO: reset
-STACKPM_CONFIG_DFLT = '/home/matt/src/stackpm/src/default.cfg' # '/etc/stackpm.cfg
+STACKPM_CONFIG_DFLT = '/etc/stackpm.cfg'
 
 ### EXPOSED METHODS
 def cfg2obj(cfg_path):

@@ -11,6 +11,10 @@ setup(
     version='0.1b',
     author='Matthew Story',
     packages=[ 'stackpm', ],
+    data_files=[
+        ( '/var/stackpm/', [], ),
+        ( '/etc/', [ 'stackpm.cfg', ], ),
+    ],
     author_email='matt.story@axial.net',
     url='https://github.com/axialmarket/stackpm',
     license='3-BSD',
