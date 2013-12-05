@@ -11,6 +11,7 @@ setup(
     version='0.1b',
     author='Matthew Story',
     packages=[ 'stackpm', ],
+    modules=[ 'stackpm_jira', ],
     data_files=[
         ( '/var/stackpm/', [], ),
         ( '/etc/', [ 'stackpm.cfg', ], ),

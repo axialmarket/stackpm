@@ -41,6 +41,11 @@ Database
 stackpm currently only supports a sqlite3 database backend, the default
 location of the database is /var/stackpm/stackpm.db
 
+Extending
+=========
+
+stackpm is designed to be easily integrated with calendars, scm and project management software. For an example of the extension in practice see stackpm_jira.py, and the links section of stackpm.cfg.
+
 Authors
 =======
 

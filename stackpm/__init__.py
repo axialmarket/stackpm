@@ -14,5 +14,6 @@ from app import stackpm_app, config, db
 
 import fields
 import models
+import links
 
-__all__ = [ 'stackpm_app', 'config', 'db', 'models', 'fields', ]
+__all__ = [ 'stackpm_app', 'config', 'db', 'models', 'fields', 'links', ]
