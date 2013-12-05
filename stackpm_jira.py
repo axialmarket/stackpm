@@ -83,8 +83,7 @@ class Connector(object):
             if isinstance(val, basestring):
                 try:
                     val = datetime.strptime(val, self.config['time_fmt'])
-                except ValueError, e:
-                    print e
+                except ValueError:
                     pass
             #END TODO
             stackpm_item[stack_key] = val
