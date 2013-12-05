@@ -51,13 +51,13 @@ class Iteration(db.Model):
     ext_id = db.Column(db.String(255), unique=True, nullable=False)
     name = db.Column(db.String(255), nullable=False)
     created_on = db.Column(db.DateTime, nullable=False)
+    updated_on = db.Column(db.DateTime, nullable=False)
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User', backref='iterations')
 
     effort_est = db.Column(db.String(50), nullable=True)
     value_est = db.Column(db.String(50), nullable=True)
-    desc = db.Column(db.Text, nullable=True)
     project = db.Column(db.String(255), nullable=True) #TODO: ref?
 
     def __init__(self, name, **kwargs):

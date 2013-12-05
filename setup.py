@@ -10,7 +10,7 @@ setup(
     name='stackpm',
     version='0.1b',
     author='Matthew Story',
-    packages=[ 'stackpm', ],
+    packages=[ 'stackpm', 'stackpm.links', ],
     modules=[ 'stackpm_jira', ],
     data_files=[
         ( '/var/stackpm/', [], ),
