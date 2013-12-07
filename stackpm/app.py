@@ -27,7 +27,7 @@ def cfg2obj(cfg_path):
        easier to read and write, we need to give it a helping hand.
 
        NB: For ease of typing, and extension, values are interpretted as
-           python literals using asl.literal_eval
+           python literals using ast.literal_eval
     '''
     config = {}
     parser = ConfigParser()
