@@ -10,8 +10,8 @@ setup(
     name='stackpm',
     version='0.1b',
     author='Matthew Story',
-    packages=[ 'stackpm', 'stackpm.links', ],
-    modules=[ 'stackpm_jira', ],
+    packages=['stackpm', 'stackpm.links'],
+    py_modules=['stackpm_jira'],
     data_files=[
         ( '/var/stackpm/', [], ),
         ( '/etc/', [ 'stackpm.cfg', ], ),
@@ -21,5 +21,6 @@ setup(
     license='3-BSD',
     description='Stack Prioritization and Forecasting Utility',
     long_description=open('./README.rst').read(),
-    requires=[ 'flask', 'flask.ext.sqlalchemy', 'numpy', 'requests', ]
+    requires=['flask', 'flask.ext.sqlalchemy', 'numpy', 'requests',
+              'betterconfig']
 )

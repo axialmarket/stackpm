@@ -139,7 +139,7 @@ class Connector(object):
                                   self.iteration_map, limit=limit)
 
     def tasks(self):
-        '''Return a list of iteration dicts, capable of being sent to
+        '''Return a list of task dicts, capable of being sent to
            models.Iteration'''
         return self.__full_search(self.__jql(self.config.get('work_jql', ''),
                                   self.config.get('discard_resolutions', [])))
