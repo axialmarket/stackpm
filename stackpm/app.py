@@ -1,10 +1,8 @@
 '''stackpm/app.py -- config and flask application setup for stackpm.
 
-   methods: cfg2obj
    objects: stackpm_app, config, db
    @author: Matthew Story <matt.story@axial.net>
-   @license: BSD 3-Clause (see LICENSE.txt)
-'''
+   @license: BSD 3-Clause (see LICENSE.txt)'''
 
 ### STANDARD LIBRARY IMPORTS
 import os
