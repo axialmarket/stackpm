@@ -82,6 +82,7 @@ class Task(db.Model):
     ext_id = db.Column(db.String(255), unique=True, nullable=False)
     name = db.Column(db.String(255), nullable=False)
     created_on = db.Column(db.DateTime, nullable=False)
+    updated_on = db.Column(db.DateTime, nullable=False)
 
     iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
                              nullable=True)
@@ -98,6 +99,7 @@ class Task(db.Model):
     started_on = db.Column(db.DateTime, nullable=True)
     dev_done_on = db.Column(db.DateTime, nullable=True)
     prod_done_on = db.Column(db.DateTime, nullable=True)
+    added_to_iteration_on = db.Column(db.DateTime, nullable=False)
     effort_est = db.Column(db.String(50), nullable=True)
 
     # computed and cached information, will change with vacations
