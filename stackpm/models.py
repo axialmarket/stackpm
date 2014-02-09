@@ -4,6 +4,8 @@
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
+from datetime import datetime
+
 from . import db
 from .fields import JSONField
 
@@ -53,11 +55,6 @@ class Iteration(db.Model):
     effort_est = db.Column(db.String(50), nullable=True)
     value_est = db.Column(db.String(50), nullable=True)
     project = db.Column(db.String(255), nullable=True) #TODO: ref?
-
-    def __init__(self, name, **kwargs):
-        self.name = name
-        for k,v in kwargs.iteritems():
-            setattr(self, k, v)
 
     def __repr__(self):
         return '<Iteration {}>'.format(self.name)
@@ -194,3 +191,16 @@ class Simulation(db.Model):
     def __repr__(self):
         return '<Simulation of {} from {}>'.format(self.iteration,
                                                    self.simulation_on)
+
+class Sync(db.Model):
+    '''Model to store sync's that have been run'''
+    id = db.Column(db.Integer, primary_key=True)
+    synced_on = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    last_seen_update = db.Column(db.DateTime, nullable=False)
+
+    type = db.Column(db.Enum('iteration'), nullable=False)
+
+    notes = db.Column(JSONField, nullable=True)
+
+    def __repr__(self):
+        return "<Sync'ed {} on {}>".format(self.type, self.synced_on)

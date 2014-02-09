@@ -15,5 +15,6 @@ from app import stackpm_app, config, db
 import fields
 import models
 import links
+import sync
 
-__all__ = [ 'stackpm_app', 'config', 'db', 'models', 'fields', 'links', ]
+__all__ = ['stackpm_app', 'config', 'db', 'models', 'fields', 'links', 'sync']

@@ -132,6 +132,8 @@ class Connector(object):
                 if val is None:
                     val = cur_scope.get('fields', {})[jira_key]
                 cur_scope = val
+                if cur_scope is None:
+                    break
 
             #TODO: get more intelligent about this
             if isinstance(val, basestring):
@@ -199,7 +201,6 @@ class Connector(object):
            pagination limits'''
         total, seen = limit or -1, 0
         params = { 'jql': jql, 'maxResults': 200, }
-        fields = ','.join([field[0] for field in field_map.values()])
         expand = [expand] if isinstance(expand, basestring) else expand
         if expand:
             params['expand'] = ",".join(expand)
@@ -221,8 +222,9 @@ class Connector(object):
         '''Create a map suitable for caching from our field names to jira's'''
         made_map = {}
         for stack_key,jira_key in our_map.iteritems():
+            exploded = jira_key.split('.')
             made_map[stack_key] = [
-                self.__field_key(k) for k in jira_key.split('.')
+                self.__field_key(k) for k in exploded
             ]
         return made_map
 
