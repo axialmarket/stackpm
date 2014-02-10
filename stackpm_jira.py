@@ -3,14 +3,14 @@
    classes: Connector
    @author: Matthew Story <matt.story@axial.net>
 '''
-import requests
+### STANDARD LIBRARY IMPORTS
 from datetime import datetime
 
-### INTERNAL METHODS AND ATTRIBUTES
+### 3RD PARTY IMPORTS
+import requests
+from stackpm import null
 
-# default sentinel
-_null = object()
-
+### INTERNAL METHODS
 def _make_map(*maps):
     '''Overlay a series of maps without modifying the originals'''
     made_map = {}
@@ -92,9 +92,9 @@ class Connector(object):
     def __quote(self, val):
         return '"{}"'.format(val.replace('"', r'\"'))
 
-    def __jql(self, jql, discard_res=_null, since=None):
+    def __jql(self, jql, discard_res=null, since=None):
         '''Combine base jql, resolution filters, and updated since'''
-        if discard_res is _null:
+        if discard_res is null:
             discard_res = self.config.get('discard_resolutions')
 
         if discard_res:
@@ -142,7 +142,10 @@ class Connector(object):
                     # which python is capable of handling, so rtrim 9
                     val = datetime.strptime(val[:-9], self.config['time_fmt'])
                 except ValueError:
-                    pass
+                    try:
+                        val = datetime.strptime(val, self.config['date_fmt'])
+                    except ValueError:
+                        pass
             #END TODO
             stackpm_item[stack_key] = val
         return stackpm_item
@@ -196,11 +199,12 @@ class Connector(object):
         task['events'] = events
         return task
 
-    def __full_search(self, jql, field_map, expand=None, limit=None):
+    def __full_search(self, jql, field_map, expand=None, limit=None,
+                      validate=True):
         '''Generator to perform a full search to limit, regardless of Jira
            pagination limits'''
         total, seen = limit or -1, 0
-        params = { 'jql': jql, 'maxResults': 200, }
+        params = { 'jql': jql, 'maxResults': 200, 'validateQuery': validate }
         expand = [expand] if isinstance(expand, basestring) else expand
         if expand:
             params['expand'] = ",".join(expand)
@@ -244,33 +248,50 @@ class Connector(object):
         return self.__task_map_cache
 
     ### EXPOSED API
-    def iterations(self, since=None, limit=None):
+    def iterations(self, since=None, limit=None, ids=null):
         '''Return a list of iteration dicts, capable of being sent to
            models.Iteration'''
-        return self.__full_search(self.__jql(self.config.get('epic_jql', ''),
-                                             since=since),
-                                  self.__iteration_map, limit=limit)
+        validate = True
+        jql = self.config.get('epic_jql', '')
+        if ids is not null:
+            validate = False
+            if not len(ids):
+                return tuple()
+            jql = 'issuetype = Epic AND id in ({})'.format(",".join([
+                    self.__quote(id_) for id_ in ids
+                ]))
+        return self.__full_search(self.__jql(jql, since=since),
+                                  self.__iteration_map, limit=limit,
+                                  validate=validate)
     def iteration(self, ext_id):
         '''Return an iteration dict, capable of being sent to
            models.Iteration'''
-        return self.__fmt_item(self.get('issue/{}'.format(ext_id)),
-                               self.__iteration_map)
+        for iter_ in self.iterations(ids=[ext_id], limit=1):
+            return iter_
+        return None
 
-    def tasks(self, since=None, limit=None):
+    def tasks(self, since=None, limit=None, ids=null):
         '''Return a list of task dicts, capable of being sent to
            models.Task'''
-        for task in self.__full_search(
-                self.__jql(self.config.get('work_jql', ''), since=since),
-                self.__task_map, expand='changelog', limit=limit):
-            yield self.__fmt_task(task, since=since)
+        validate = True
+        jql = self.config.get('work_jql', '')
+        if ids is not null:
+            validate = False
+            jql = 'issuetype != Epic AND id in ({})'.format(",".join([
+                    self.__quote(id_) for id_ in ids
+                ]))
+        if ids is null or len(ids):
+            for task in self.__full_search(self.__jql(jql, since=since),
+                                           self.__task_map,
+                                           expand='changelog', limit=limit,
+                                           validate=validate):
+                yield self.__fmt_task(task, since=since)
 
     def task(self, ext_id, since=None):
         '''Return an task dict, capable of being sent to models.Task'''
-        return self.__fmt_task(self.__fmt_item(
-                self.get('issue/{}'.format(ext_id),
-                         params={'expand': 'changelog'}), self.__task_map),
-                since=since)
-
+        for task in self.tasks(ids=[ext_id], limit=1):
+            return task
+        return None
 
     def get(self, method, **kwargs):
         '''REST get method with auth and method builder helpers'''

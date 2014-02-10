@@ -10,6 +10,11 @@
 '''
 
 # ORDER MATTERS HERE -- SOME MODULES ARE DEPENDANT ON OTHERS
+
+# default sentinel for use across modules and sub-packages
+null = object()
+
+# imports for exposing at package level
 from app import stackpm_app, config, db
 
 import fields
@@ -17,4 +22,4 @@ import models
 import links
 import sync
 
-__all__ = ['stackpm_app', 'config', 'db', 'models', 'fields', 'links', 'sync']
+__all__ = ['null', 'stackpm_app', 'config', 'db', 'models', 'fields', 'links', 'sync']

@@ -4,8 +4,6 @@
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
-from datetime import datetime
-
 from . import db
 from .fields import JSONField
 
@@ -16,6 +14,12 @@ class User(db.Model):
            stupid as they are ... you will break stackpm if you are silly
            enough to duplicate emails in JIRA.'''
     id = db.Column(db.Integer, primary_key=True)
+    created_on = db.Column(db.DateTime, nullable=False,
+                           server_default=db.func.now())
+    updated_on = db.Column(db.DateTime, nullable=False,
+                           server_default=db.func.now(),
+                           onupdate=db.func.current_timestamp())
+
     pm_name = db.Column(db.String(255), unique=True, nullable=True)
     email = db.Column(db.String(255), unique=True, nullable=False)
 
@@ -90,7 +94,7 @@ class Task(db.Model):
     started_on = db.Column(db.DateTime, nullable=True)
     dev_done_on = db.Column(db.DateTime, nullable=True)
     prod_done_on = db.Column(db.DateTime, nullable=True)
-    added_to_iteration_on = db.Column(db.DateTime, nullable=False)
+    added_to_iteration_on = db.Column(db.DateTime, nullable=True)
     effort_est = db.Column(db.String(50), nullable=True)
 
     # computed and cached information, will change with vacations
@@ -98,17 +102,17 @@ class Task(db.Model):
     dev_done_workdays = db.Column(db.Integer, nullable=True)
     prod_done_workdays = db.Column(db.Integer, nullable=True)
 
-    def __init__(self, name, **kwargs):
-        self.name = name
-        iteration_ext_id = kwargs.pop('iteration_ext_id', None)
-        if iteration_ext_id is not None:
-            kwargs['iteration'] = \
-                Iteration.query.filter_by(ext_id=iteration_ext_id).first()
-        for k,v in kwargs.iteritems():
-            setattr(self, k, v)
+    #def __init__(self, name, **kwargs):
+    #    self.name = name
+    #    iteration_ext_id = kwargs.pop('iteration_ext_id', None)
+    #    if iteration_ext_id is not None:
+    #        kwargs['iteration'] = \
+    #            Iteration.query.filter_by(ext_id=iteration_ext_id).first()
+    #    for k,v in kwargs.iteritems():
+    #        setattr(self, k, v)
 
     def __repr__(self):
-        return '<Execution Task {}>'.format(self.name)
+        return '<Task {}>'.format(self.name)
 
 class Stat(db.Model):
     '''Model of cached statistics about deliveries by estimate
@@ -161,12 +165,8 @@ class Event(db.Model):
     effort_est_from = db.Column(db.String(50), nullable=True)
     effort_est_to = db.Column(db.String(50), nullable=True)
 
-    def __init__(self, type_, task):
-        self.type = type_
-        self.task = task
-
     def __repr__(self):
-        return '<Event {} on task {}>'.format(self.type, self.task)
+        return '<Event {} on "{}" id: {}>'.format(self.type, self.task.name, self.id)
 
 class Simulation(db.Model):
     '''Model to group all data-points in a simulation.
@@ -195,10 +195,11 @@ class Simulation(db.Model):
 class Sync(db.Model):
     '''Model to store sync's that have been run'''
     id = db.Column(db.Integer, primary_key=True)
-    synced_on = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    synced_on = db.Column(db.DateTime, nullable=False,
+                          server_default=db.func.now())
     last_seen_update = db.Column(db.DateTime, nullable=False)
 
-    type = db.Column(db.Enum('iteration'), nullable=False)
+    type = db.Column(db.Enum('full', 'iteration', 'task'), nullable=False)
 
     notes = db.Column(JSONField, nullable=True)
 
