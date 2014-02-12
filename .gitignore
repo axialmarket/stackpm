@@ -2,3 +2,4 @@
 *.sw[opnm]
 build/
 dist/
+cfg/stackpm/

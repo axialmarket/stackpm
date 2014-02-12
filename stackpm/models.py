@@ -19,9 +19,10 @@ class User(db.Model):
     updated_on = db.Column(db.DateTime, nullable=False,
                            server_default=db.func.now(),
                            onupdate=db.func.current_timestamp())
+    email = db.Column(db.String(255), unique=True, nullable=False)
 
     pm_name = db.Column(db.String(255), unique=True, nullable=True)
-    email = db.Column(db.String(255), unique=True, nullable=False)
+    cal_name = db.Column(db.String(255), unique=True, nullable=True)
 
     def __init__(self, email, pm_name=None):
         self.email = email
@@ -153,17 +154,27 @@ class Event(db.Model):
     occured_on = db.Column(db.DateTime, nullable=False)
 
     # iteration associated with the change, when there is an iteration change
-    # one record should be created for each iteration
+    # this column is the iteration after the change
     iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
                              nullable=True)
-    iteration = db.relationship('Iteration', backref='events')
+    iteration = db.relationship(
+        'Iteration', backref='events',
+        primaryjoin='Event.iteration_id == Iteration.id')
+
+    # when there is an iteration change this column is the iteration before
+    # the change
+    from_iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
+                                  nullable=True)
+    from_iteration = db.relationship(
+        'Iteration', backref='departures',
+        primaryjoin='Event.from_iteration_id == Iteration.id')
 
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     task = db.relationship('Task', backref='events')
 
     # additional info for estimate-change events
-    effort_est_from = db.Column(db.String(50), nullable=True)
-    effort_est_to = db.Column(db.String(50), nullable=True)
+    from_effort_est = db.Column(db.String(50), nullable=True)
+    to_effort_est = db.Column(db.String(50), nullable=True)
 
     def __repr__(self):
         return '<Event {} on "{}" id: {}>'.format(self.type, self.task.name, self.id)

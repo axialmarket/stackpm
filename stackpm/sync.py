@@ -3,6 +3,9 @@
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
+### TODO: Need to be able to remove items that were resolved with
+###       "invalid resolution statuses", or that were deleted on the remote
+
 ### STANDARD LIBRARY IMPORTS
 from datetime import datetime
 
@@ -62,7 +65,7 @@ def _batch_sync(most_recent_update, batch, model, ext_id='ext_id',
             db.session.add(obj)
             batch[key] = obj
         obj_updated_on = getattr(obj, updated_on)
-        if most_recent_update is None:
+        if most_recent_update in (None, null):
             most_recent_update = obj_updated_on
         elif obj_updated_on is not None:
             most_recent_update = max(most_recent_update, obj_updated_on)
@@ -120,17 +123,17 @@ def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
 
     # and finally the events related to the tasks
     new_events = {}
-    for key,(task_ext_id,iter_ext_id,ev) in events.iteritems():
-        iter_ = iters.get(iter_ext_id)
+    for key,(task_ext_id,iter_ext_id,from_iter_ext_id,ev) in events.iteritems():
+        iter_, from_iter = iters.get(iter_ext_id), iters.get(from_iter_ext_id)
         ev['iteration'] = iter_
+        ev['from_iteration'] = from_iter
         ev['task'] = batch[task_ext_id]
-        new_key = (key[0], ev['iteration'].id if ev['iteration'] else None,
-                   key[2], ev['task'].id)
+        new_key = (key[0], key[1], ev['task'].id)
         new_events[new_key] = ev
 
     # sync events
     _batch_sync(None, new_events, Event, updated_on='occured_on',
-                ext_id=['type', 'iteration_id', 'occured_on', 'task_id'])
+                ext_id=['type', 'occured_on', 'task_id'])
 
     return task_sync
 
@@ -150,13 +153,14 @@ def sync(since=null):
     since = max([dt for dt in last_sync]) if last_sync else None
     return _record_sync('full', since)
 
-def sync_iterations(since=null, ids=null):
+def sync_iterations(since=null, ids=null, record=null):
     '''Sync iterations from remote project_manager link to the local database.
 
        If ``since`` is passed, sync only iterations updated more recently
        than ``since``, else only sync iterations updated more recently than
        the last iteration sync.'''
     since = _sync_since('iteration') if since is null else since
+    record = record if record is not null else (ids is null)
     try:
         batch = {}
         for iteration in pm.iterations(since=since, ids=ids):
@@ -170,28 +174,33 @@ def sync_iterations(since=null, ids=null):
     except Exception:
         db.session.rollback()
         raise
-    return _record_sync('iteration', since)
+    if record:
+        return _record_sync('iteration', since)
+    return None
 
-def sync_tasks(since=null, ids=null):
+def sync_tasks(since=null, ids=null, record=null):
     '''Sync tasks from remote project_manager link to the local database.
 
        If ``since`` is passed, sync only tasks updated more recently than
        ``since``, else only sync tasks updated more recently than the last
        task sync.'''
     since = _sync_since('task') if since is null else since
+    record = record if record is not null else (ids is null)
     try:
         batch, users, events, iter_ext_ids = {}, {}, {}, set()
         for task in pm.tasks(since=since, ids=ids):
             # setup events
             for ev in task.pop('events', []):
                 event_iter_ext_id = ev.pop('iteration_ext_id', None)
-                if event_iter_ext_id is not None:
-                    iter_ext_ids.add(event_iter_ext_id)
-                    key = (
-                        ev['type'], event_iter_ext_id,
-                        ev['occured_on'], task['ext_id']
-                    )
-                    events[key] = (task['ext_id'], event_iter_ext_id, ev)
+                event_from_iter_ext_id = ev.pop('from_iteration_ext_id', None)
+                for i in (event_iter_ext_id, event_from_iter_ext_id):
+                    if i is not None:
+                        iter_ext_ids.add(i)
+                key = (
+                    ev['type'], ev['occured_on'], task['ext_id']
+                )
+                events[key] = (task['ext_id'], event_iter_ext_id,
+                               event_from_iter_ext_id, ev)
 
             # setup iterations
             iter_ext_id = task.pop('iteration_ext_id')
@@ -216,7 +225,9 @@ def sync_tasks(since=null, ids=null):
         db.session.rollback()
         raise
 
-    return _record_sync('task', since)
+    if record:
+        return _record_sync('task', since)
+    return None
 
 
 __all__ = ['SYNC_BATCH', 'sync', 'sync_iterations', 'sync_tasks']
