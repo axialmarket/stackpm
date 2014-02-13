@@ -5,9 +5,12 @@
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
+### 3RD PARTY IMPORTS
+from workdays import networkdays
+
+### INTERNAL IMPORTS
 from . import db
 from .fields import JSONField
-from .workdays import net_workdays
 
 class User(db.Model):
     '''Model to map local usage to 3rd party tool like Jira
@@ -131,9 +134,11 @@ class Task(db.Model):
             for stop,cache in (('dev_done_on', 'dev_done_workdays'),
                                ('prod_done_on', 'prod_done_workdays')):
                 stop = getattr(self, stop)
-                if stop is not None:
-                    setattr(self, cache, net_workdays(self.started_on, stop,
-                                                      excludes=days_off))
+                if self.started_on is not None and stop is not None:
+                    setattr(self, cache, networkdays(self.started_on, stop,
+                                                     holidays=days_off))
+                elif force:
+                    setattr(self, cache, None)
         return self.dev_done_workdays, self.prod_done_workdays
 
 class Stat(db.Model):

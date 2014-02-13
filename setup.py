@@ -23,5 +23,5 @@ setup(
     description='Stack Prioritization and Forecasting Utility',
     long_description=open('./README.rst').read(),
     requires=['dateutil', 'flask', 'flask.ext.sqlalchemy', 'numpy',
-              'requests', 'betterconfig']
+              'requests', 'betterconfig','workdays']
 )

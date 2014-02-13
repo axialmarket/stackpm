@@ -17,7 +17,6 @@ null = object()
 # imports for exposing at package level
 from app import stackpm_app, config, db
 
-import workdays
 import fields
 import models
 import links
