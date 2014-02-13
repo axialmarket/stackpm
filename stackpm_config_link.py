@@ -4,7 +4,6 @@
    @author: Matthew Story <matt.story@axial.net>
 '''
 ### STANDARD LIBRARY IMPORTS
-import heapq
 from datetime import datetime
 
 class Connector(object):
@@ -20,7 +19,7 @@ class Connector(object):
                 self.__vacations[key] = vacation
 
     def __repr__(self):
-        return '<JiraLink to {}>'.format(self.config.get('url'))
+        return '<ConfigLink to [config_link]>'
 
     def __vacaterator(self, map_, filter_key):
         '''Given a vacation or holiday map and a key to filter on (year or
