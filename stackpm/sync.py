@@ -206,7 +206,7 @@ def _update_task_net_workdays(*args):
 
 
 ### EXPOSED METHODS
-def sync(since=null):
+def sync():
     '''Sync everything.
 
        If ``since`` is passed, sinc only objects updated more recently than
@@ -214,7 +214,7 @@ def sync(since=null):
     last_sync = []
     for meth in ('sync_holidays', 'sync_vacations', 'sync_iterations',
                  'sync_tasks'):
-        sync_res = globals()[meth](since=since)
+        sync_res = globals()[meth]()
         if sync_res:
             last_sync.append(sync_res.last_seen_update)
 

@@ -44,7 +44,8 @@ class Vacation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    user = db.relationship('User', backref='vacations')
+    user = db.relationship('User', backref=db.backref('vacation',
+                                        order_by=db.desc('Vacation.date')))
     db.Index('user_id_date', user_id, date, unique=True)
 
     def __repr__(self):
@@ -163,7 +164,8 @@ class Event(db.Model):
     iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
                              nullable=True)
     iteration = db.relationship(
-        'Iteration', backref='events',
+        'Iteration', backref=db.backref('events',
+                                        order_by=db.desc('Event.occured_on')),
         primaryjoin='Event.iteration_id == Iteration.id')
 
     # when there is an iteration change this column is the iteration before
@@ -171,12 +173,13 @@ class Event(db.Model):
     from_iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
                                   nullable=True)
     from_iteration = db.relationship(
-        'Iteration', backref='departures',
+        'Iteration', backref=db.backref('departures',
+                                        order_by=db.desc('Event.occured_on')),
         primaryjoin='Event.from_iteration_id == Iteration.id')
 
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
-    task = db.relationship('Task', order_by=db.desc(occured_on),
-                           backref='events')
+    task = db.relationship('Task', backref=db.backref('events',
+                           order_by=db.desc('Event.occured_on')))
 
     # additional info for estimate-change events
     from_effort_est = db.Column(db.String(50), nullable=True)
@@ -186,7 +189,8 @@ class Event(db.Model):
              unique=True)
 
     def __repr__(self):
-        return '<Event {} on "{}" id: {}>'.format(self.type, self.task.name, self.id)
+        return '<Event {} on "{}" id: {}>'.format(self.type, self.task.name,
+                                                  self.id)
 
 class Simulation(db.Model):
     '''Model to group all data-points in a simulation.
