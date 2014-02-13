@@ -21,7 +21,8 @@ def _make_map(*maps):
 def _strip_val(val):
     '''Jira is inconsistent in regards to internal custom ids versus names,
        strip the '.value' suffix from any fields as needed.'''
-    return val[:-6] if val.endswith('.value') else val
+    val = val[:-6] if val.endswith('.value') else val
+    return val[:-5] if val.endswith('.name') else val
 
 ### EXPOSED CLASSES
 class JiraLinkError(Exception):
@@ -40,7 +41,8 @@ class Connector(object):
         self.status_map = {
             self.config.get('started_status'): 'started_on',
             self.config.get('dev_done_status'): 'dev_done_on',
-            self.config.get('prod_done_status'): 'prod_done_on'
+            self.config.get('prod_done_status'): 'prod_done_on',
+            self.config.get('testing_status'): 'round_trips',
         }
 
         # initialize @property-accessed caches
@@ -73,7 +75,8 @@ class Connector(object):
             'iteration_ext_id': self.config['iteration_link_field'],
             'started_on': self.config['started_override_field'],
             'dev_done_on': self.config['dev_done_override_field'],
-            'prod_done_on': self.config['prod_done_override_field']
+            'prod_done_on': self.config['prod_done_override_field'],
+            'round_trips': self.config['testing_override_field']
         })
 
     def __repr__(self):
@@ -109,7 +112,7 @@ class Connector(object):
                                since.strftime(self.config['jql_time_fmt']))
             jql = (' AND ' if jql else '').join([ jql, since_filter, ])
 
-        return jql
+        return '{} ORDER BY Updated DESC'.format(jql)
 
     def __field_key(self, name):
         '''Take a human recognizable field name and return the internal key'''
@@ -164,6 +167,7 @@ class Connector(object):
 
         iter_field = _strip_val(self.__task_map_raw['iteration_ext_id'])
         est_field = _strip_val(self.__task_map_raw['effort_est'])
+        assignee_field = _strip_val(self.__task_map_raw['user_pm_name'])
 
         for change in task.get('changelog', {}):
             for item in change.get('items', []):
@@ -173,8 +177,10 @@ class Connector(object):
 
                 if item['field'].strip() == 'status':
                     field_name = self.status_map.get(item['toString'])
-                    if field_name and (task[field_name] is None or \
-                                       field_name == 'prod_done_on'):
+                    if field_name == 'round_trips' and not task.get(field_name):
+                        task[field_name] = (task.get(field_name) or 0) + 1
+                    elif field_name and (task[field_name] is None or \
+                                         field_name == 'prod_done_on'):
                         task[field_name] = occured
                 # else, if the event is recent enough, append it
                 elif since is None or occured > since:
@@ -194,6 +200,9 @@ class Connector(object):
                             'from_effort_est': item['fromString'] or None,
                             'to_effort_est': item['toString'] or None
                         })
+                    elif item['field'].strip == assignee_field:
+                        #TODO: need to go from user_pm_name => email => user_id
+                        pass
 
         del task['changelog']
         task['events'] = events

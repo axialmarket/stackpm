@@ -1,11 +1,13 @@
 '''stackpm/models.py -- Database API for stackpm
 
-   classes: User, Vacation, Iteration, Task, Stat, Event, Simulation
+   classes: User, Holiday, Vacation, Iteration, Task, Stat, Event,
+            Simulation, Sync
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
 from . import db
 from .fields import JSONField
+from .workdays import net_workdays
 
 class User(db.Model):
     '''Model to map local usage to 3rd party tool like Jira
@@ -108,17 +110,31 @@ class Task(db.Model):
     dev_done_workdays = db.Column(db.Integer, nullable=True)
     prod_done_workdays = db.Column(db.Integer, nullable=True)
 
-    #def __init__(self, name, **kwargs):
-    #    self.name = name
-    #    iteration_ext_id = kwargs.pop('iteration_ext_id', None)
-    #    if iteration_ext_id is not None:
-    #        kwargs['iteration'] = \
-    #            Iteration.query.filter_by(ext_id=iteration_ext_id).first()
-    #    for k,v in kwargs.iteritems():
-    #        setattr(self, k, v)
+    # number of times through "testing" status
+    round_trips = db.Column(db.Integer, nullable=True)
+
+    def __init__(self, **kwargs):
+        super(Task, self).__init__(**kwargs)
+        self.cache_workdays()
 
     def __repr__(self):
         return '<Task {}>'.format(self.name)
+
+    def cache_workdays(self, force=False):
+        '''Compute the number of work-days between started_on and dev_done_on
+           and prod_done_on, and store on self.'''
+        if force or (self.started_on and ((
+                self.dev_done_on and self.dev_done_workdays is None) or (
+                self.prod_done_on and self.prod_done_workdays is None))):
+            days_off = set([v.date for v in self.user.vacation])
+            days_off |= set([h.date for h in Holiday.query.all()])
+            for stop,cache in (('dev_done_on', 'dev_done_workdays'),
+                               ('prod_done_on', 'prod_done_workdays')):
+                stop = getattr(self, stop)
+                if stop is not None:
+                    setattr(self, cache, net_workdays(self.started_on, stop,
+                                                      excludes=days_off))
+        return self.dev_done_workdays, self.prod_done_workdays
 
 class Stat(db.Model):
     '''Model of cached statistics about deliveries by estimate
@@ -155,7 +171,7 @@ class Event(db.Model):
     '''Model for observed events that require notification'''
     id = db.Column(db.Integer, primary_key=True)
     type = db.Column(db.Enum('iteration-change', 'estimate-change',
-                             'outlier'),
+                             'user-change', 'outlier'),
                      nullable=False)
     occured_on = db.Column(db.DateTime, nullable=False)
 
@@ -173,13 +189,26 @@ class Event(db.Model):
     from_iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
                                   nullable=True)
     from_iteration = db.relationship(
-        'Iteration', backref=db.backref('departures',
+        'Iteration', backref=db.backref('old_task_events',
                                         order_by=db.desc('Event.occured_on')),
         primaryjoin='Event.from_iteration_id == Iteration.id')
 
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     task = db.relationship('Task', backref=db.backref('events',
                            order_by=db.desc('Event.occured_on')))
+
+    # additional info for user-change events
+    from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'),
+                             nullable=True)
+    from_user = db.relationship(
+        'User', backref='old_task_events',
+        primaryjoin='Event.from_user_id == User.id')
+
+    to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'),
+                           nullable=True)
+    to_user = db.relationship(
+        'User', backref='new_task_events',
+        primaryjoin='Event.to_user_id == User.id')
 
     # additional info for estimate-change events
     from_effort_est = db.Column(db.String(50), nullable=True)
@@ -230,3 +259,6 @@ class Sync(db.Model):
 
     def __repr__(self):
         return "<Sync'ed {} on {}>".format(self.type, self.synced_on)
+
+__all__ = ['User', 'Holiday', 'Vacation', 'Iteration', 'Task', 'Stat',
+           'Event', 'Simulation', 'Sync']

@@ -17,9 +17,11 @@ null = object()
 # imports for exposing at package level
 from app import stackpm_app, config, db
 
+import workdays
 import fields
 import models
 import links
 import sync
 
-__all__ = ['null', 'stackpm_app', 'config', 'db', 'models', 'fields', 'links', 'sync']
+__all__ = ['null', 'stackpm_app', 'config', 'db', 'models', 'fields',
+           'links', 'sync', 'workdays']

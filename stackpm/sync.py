@@ -134,6 +134,10 @@ def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
     # then sync the tasks themselves -- store this sync, it's the one we want
     _, task_sync = _batch_sync(since, batch, Task)
 
+    # forceably reset task workdays cache
+    for task in batch.itervalues():
+        task.cache_workdays(force=True)
+
     # and finally the events related to the tasks
     new_events = {}
     for key,(task_ext_id,iter_ext_id,from_iter_ext_id,ev) in events.iteritems():
@@ -183,7 +187,6 @@ def _delete_datish(keep, model, ext_id, date_attr='date'):
 
 def _update_task_net_workdays(*args):
     '''Update a task net_workdays by date/user or just date'''
-    print '@@', args
     query = Task.query
     ors = []
     for arg in args:
@@ -199,8 +202,7 @@ def _update_task_net_workdays(*args):
         ors.append(db.and_(*ands))
 
     for task in Task.query.filter(db.or_(*ors)):
-        #TODO: update net_workdays
-        pass
+        task.cache_workdays(force=True)
 
     db.session.commit()
 
@@ -374,4 +376,5 @@ def sync_vacations(email=None, record=True):
         return _record_sync('vacation', datetime.now())
     return None
 
-__all__ = ['SYNC_BATCH', 'sync', 'sync_iterations', 'sync_tasks']
+__all__ = ['SYNC_BATCH', 'sync', 'sync_iterations', 'sync_tasks',
+           'sync_holidays', 'sync_vacations']
