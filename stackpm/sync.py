@@ -145,7 +145,7 @@ def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
         new_events[new_key] = ev
 
     # sync events
-    _, _batch_sync(None, new_events, Event, updated_on='occured_on',
+    _batch_sync(None, new_events, Event, updated_on='occured_on',
                 ext_id=['type', 'occured_on', 'task_id'])
 
     return task_sync
