@@ -31,17 +31,21 @@ class User(db.Model):
     def __repr__(self):
         return '<User {}>'.format(self.email)
 
+class Holiday(db.Model):
+    '''Model to store vacations'''
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.DateTime, nullable=False, unique=True)
+
+    def __repr__(self):
+        return '<Holiday {}>'.format(self.date)
+
 class Vacation(db.Model):
-    '''Model to store vacations and holidays, holidays are nullable on user_id
-       field'''
+    '''Model to store vacations'''
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     user = db.relationship('User', backref='vacations')
-
-    def __init__(self, date, user=None):
-        self.date = date
-        self.user = user
+    db.Index('user_id_date', user_id, date, unique=True)
 
     def __repr__(self):
         return '<Vacation {} for {}>'.format(self.date, self.user or 'All')
@@ -145,6 +149,7 @@ class Stat(db.Model):
     def __repr__(self):
         return '<Stat for {} at {} est>'.format(self.user, self.effort_est)
 
+#TODO: ownership changes are important too
 class Event(db.Model):
     '''Model for observed events that require notification'''
     id = db.Column(db.Integer, primary_key=True)
@@ -170,11 +175,15 @@ class Event(db.Model):
         primaryjoin='Event.from_iteration_id == Iteration.id')
 
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
-    task = db.relationship('Task', backref='events')
+    task = db.relationship('Task', order_by=db.desc(occured_on),
+                           backref='events')
 
     # additional info for estimate-change events
     from_effort_est = db.Column(db.String(50), nullable=True)
     to_effort_est = db.Column(db.String(50), nullable=True)
+
+    db.Index('task_id_type_occured_on', task_id, type, occured_on,
+             unique=True)
 
     def __repr__(self):
         return '<Event {} on "{}" id: {}>'.format(self.type, self.task.name, self.id)
@@ -210,7 +219,8 @@ class Sync(db.Model):
                           server_default=db.func.now())
     last_seen_update = db.Column(db.DateTime, nullable=False)
 
-    type = db.Column(db.Enum('full', 'iteration', 'task'), nullable=False)
+    type = db.Column(db.Enum('full', 'iteration', 'task', 'holiday',
+                             'vacation'), nullable=False)
 
     notes = db.Column(JSONField, nullable=True)
 

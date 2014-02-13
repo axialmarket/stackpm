@@ -180,19 +180,19 @@ class Connector(object):
                 elif since is None or occured > since:
                     if item['field'].strip() == iter_field:
                         current_iteration = item['toString']
-                        for ext_id in (item['fromString'], item['toString']):
-                            events.append({
-                                'type': 'iteration-change',
-                                'iteration_ext_id': ext_id,
-                                'occured_on': occured
-                            })
+                        events.append({
+                            'type': 'iteration-change',
+                            'iteration_ext_id': item['toString'],
+                            'from_iteration_ext_id': item['fromString'],
+                            'occured_on': occured
+                        })
                     elif item['field'].strip() == est_field:
                         events.append({
                             'type': 'estimate-change',
                             'iteration_ext_id': current_iteration,
                             'occured_on': occured,
-                            'effort_est_from': item['fromString'] or None,
-                            'effort_est_to': item['toString'] or None
+                            'from_effort_est': item['fromString'] or None,
+                            'to_effort_est': item['toString'] or None
                         })
 
         del task['changelog']

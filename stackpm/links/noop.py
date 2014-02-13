@@ -45,6 +45,18 @@ class Connector(object):
            events since ``since``.'''
         raise NotImplementedError
 
+    ### API for project_manager connector
+    def holidays(self, year=None):
+        '''return a list of holidays in descending order for ``year``. if
+           ``year`` is none, holidays will return holidays from all years'''
+        return []
+
+    def vacations(self, email=None):
+        '''Return a list of vacations in descending order for ``email``.
+           If ``email`` is None, return vacations for all emails.'''
+        return []
+
+    ### General Purpose and DEBUG
     def get(self, *args, **kwargs):
         '''Not to be used directly, as interface may vary, but get should be
            exposed for REST API backed Connector's as it is useful in
