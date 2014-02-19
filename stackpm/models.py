@@ -54,7 +54,7 @@ class Vacation(db.Model):
     db.Index('user_id_date', user_id, date, unique=True)
 
     def __repr__(self):
-        return '<Vacation {} for {}>'.format(self.date, self.user or 'All')
+        return '<Vacation {} for {}>'.format(self.date, self.user)
 
 class Iteration(db.Model):
     '''Model for iterations, which will typically be 'Epics' in the upstream
@@ -121,7 +121,7 @@ class Task(db.Model):
         self.cache_workdays()
 
     def __repr__(self):
-        return '<Task {}>'.format(self.name)
+        return '<Task {}>'.format(self.name.encode('utf8', errors='ignore'))
 
     def cache_workdays(self, force=False):
         '''Compute the number of work-days between started_on and dev_done_on
@@ -147,12 +147,13 @@ class Stat(db.Model):
        TODO: May by somewhat useless, or misleading, might want to aggregate
              trailing N-day averages, and look at it over time.'''
     id = db.Column(db.Integer, primary_key=True)
-    sample_size = db.Column(db.Integer, nullable=False, default=0)
+    dev_done_sample_size = db.Column(db.Integer, nullable=False, default=0)
     dev_done_mean = db.Column(db.Float, nullable=False)
     dev_done_median = db.Column(db.Integer, nullable=False)
     dev_done_stddev = db.Column(db.Float, nullable=False)
     dev_done_stderr = db.Column(db.Float, nullable=False)
     dev_done_conf_int = db.Column(db.Float, nullable=False) # 95% conf int
+    prod_done_sample_size = db.Column(db.Integer, nullable=False, default=0)
     prod_done_mean = db.Column(db.Float, nullable=False)
     prod_done_median = db.Column(db.Float, nullable=False)
     prod_done_stddev = db.Column(db.Float, nullable=False)
@@ -162,11 +163,10 @@ class Stat(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User', backref='stats')
 
+    as_of = db.Column(db.DateTime, nullable=False)
     effort_est = db.Column(db.String(50), nullable=True)
-
-    def __init__(self, **kwargs):
-        for k,v in kwargs.iteritems():
-            setattr(self, k, v)
+    db.Index('user_id_as_of_effort_est', user_id, as_of, effort_est,
+             unique=True)
 
     def __repr__(self):
         return '<Stat for {} at {} est>'.format(self.user, self.effort_est)
