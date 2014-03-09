@@ -65,18 +65,20 @@ class Connector(object):
             'effort_est': self.config['effort_estimate_field']
         }
         self.__iteration_map_raw = _make_map(self.__base_map, {
-            'project': 'Project.key',
+            'team': 'Project.key',
+            'rank': 'Rank',
             'value_est': self.config['value_estimate_field'],
         })
         self.__task_map_raw = _make_map(self.__base_map, {
             'changelog': 'changelog.histories',
             'user_pm_name': 'Assignee.name',
             'user_email': 'Assignee.emailAddress',
+            'resolution': 'resolution.name',
             'iteration_ext_id': self.config['iteration_link_field'],
             'started_on': self.config['started_override_field'],
             'dev_done_on': self.config['dev_done_override_field'],
             'prod_done_on': self.config['prod_done_override_field'],
-            'round_trips': self.config['testing_override_field']
+            'round_trips': self.config['testing_override_field'],
         })
 
     def __repr__(self):
@@ -95,18 +97,8 @@ class Connector(object):
     def __quote(self, val):
         return '"{}"'.format(val.replace('"', r'\"'))
 
-    def __jql(self, jql, discard_res=null, since=None):
+    def __jql(self, jql, since=None):
         '''Combine base jql, resolution filters, and updated since'''
-        if discard_res is null:
-            discard_res = self.config.get('discard_resolutions')
-
-        if discard_res:
-            res_jql = '(resolution is empty or resolution not in'\
-                      ' ({}))'.format(",".join([
-                          self.__quote(res) for res in discard_res
-                      ]))
-            jql = (' AND ' if jql else '').join([ jql, res_jql, ])
-
         if since:
             since_filter = 'Updated >= "{}"'.format(
                                since.strftime(self.config['jql_time_fmt']))

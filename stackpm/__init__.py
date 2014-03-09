@@ -20,7 +20,9 @@ from app import stackpm_app, config, db
 import fields
 import models
 import links
+import stats
+import estimates
 import sync
 
 __all__ = ['null', 'stackpm_app', 'config', 'db', 'models', 'fields',
-           'links', 'sync', 'workdays']
+           'links', 'sync', 'stats', 'workdays', 'estimates']

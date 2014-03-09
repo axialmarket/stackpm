@@ -67,9 +67,11 @@ class Iteration(db.Model):
     created_on = db.Column(db.DateTime, nullable=False)
     updated_on = db.Column(db.DateTime, nullable=False)
 
+    rank = db.Column(db.Integer, nullable=False)
     effort_est = db.Column(db.String(50), nullable=True)
     value_est = db.Column(db.String(50), nullable=True)
-    project = db.Column(db.String(255), nullable=True) #TODO: ref?
+
+    team = db.Column(db.String(255), nullable=True)
 
     def __repr__(self):
         return '<Iteration {}>'.format(self.name)
@@ -109,9 +111,14 @@ class Task(db.Model):
     effort_est = db.Column(db.String(50), nullable=True)
 
     # computed and cached information, will change with vacations
-    # TODO: hours? days will not be granular enough for all cases
     dev_done_workdays = db.Column(db.Integer, nullable=True)
     prod_done_workdays = db.Column(db.Integer, nullable=True)
+
+    # TODO: days are not granular enough, populate this later
+    dev_done_workseconds = db.Column(db.Integer, nullable=True)
+    prod_done_workseconds = db.Column(db.Integer, nullable=True)
+
+    resolution = db.Column(db.String(50), nullable=True)
 
     # number of times through "testing" status
     round_trips = db.Column(db.Integer, nullable=True)
@@ -148,17 +155,30 @@ class Stat(db.Model):
              trailing N-day averages, and look at it over time.'''
     id = db.Column(db.Integer, primary_key=True)
     dev_done_sample_size = db.Column(db.Integer, nullable=False, default=0)
-    dev_done_mean = db.Column(db.Float, nullable=False)
-    dev_done_median = db.Column(db.Integer, nullable=False)
-    dev_done_stddev = db.Column(db.Float, nullable=False)
-    dev_done_stderr = db.Column(db.Float, nullable=False)
-    dev_done_conf_int = db.Column(db.Float, nullable=False) # 95% conf int
+    dev_done_mean = db.Column(db.Float, nullable=True)
+    dev_done_median = db.Column(db.Float, nullable=True)
+    dev_done_mode = db.Column(db.Float, nullable=True)
+    dev_done_stddev = db.Column(db.Float, nullable=True)
+    dev_done_stderr = db.Column(db.Float, nullable=True)
+    dev_done_conf_int = db.Column(db.Float, nullable=True) # 95% conf int
+
     prod_done_sample_size = db.Column(db.Integer, nullable=False, default=0)
-    prod_done_mean = db.Column(db.Float, nullable=False)
-    prod_done_median = db.Column(db.Float, nullable=False)
-    prod_done_stddev = db.Column(db.Float, nullable=False)
-    prod_done_stderr = db.Column(db.Float, nullable=False)
-    prod_done_conf_int = db.Column(db.Float, nullable=False) # 95% conf int
+    prod_done_mean = db.Column(db.Float, nullable=True)
+    prod_done_median = db.Column(db.Float, nullable=True)
+    prod_done_mode = db.Column(db.Float, nullable=True)
+    prod_done_stddev = db.Column(db.Float, nullable=True)
+    prod_done_stderr = db.Column(db.Float, nullable=True)
+    prod_done_conf_int = db.Column(db.Float, nullable=True) # 95% conf int
+
+    round_trips_sample_size = db.Column(db.Integer, nullable=False, default=0)
+    round_trips_mean = db.Column(db.Float, nullable=True)
+    round_trips_median = db.Column(db.Float, nullable=True)
+    round_trips_mode = db.Column(db.Float, nullable=True)
+    round_trips_stddev = db.Column(db.Float, nullable=True)
+    round_trips_stderr = db.Column(db.Float, nullable=True)
+    round_trips_conf_int = db.Column(db.Float, nullable=True) # 95% conf int
+
+    failure_rate = db.Column(db.Float, nullable=True)
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User', backref='stats')
@@ -171,7 +191,6 @@ class Stat(db.Model):
     def __repr__(self):
         return '<Stat for {} at {} est>'.format(self.user, self.effort_est)
 
-#TODO: ownership changes are important too
 class Event(db.Model):
     '''Model for observed events that require notification'''
     id = db.Column(db.Integer, primary_key=True)

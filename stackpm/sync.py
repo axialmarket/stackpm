@@ -3,16 +3,15 @@
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
-### TODO: Need to be able to remove items that were resolved with
-###       "invalid resolution statuses", or that were deleted on the remote
-
 ### STANDARD LIBRARY IMPORTS
-from datetime import datetime
+from datetime import datetime, date
 
 ### INTERNAL IMPORTS
 from . import db, null
 from .links import project_manager as pm, calendar as cal
-from .models import Sync, Iteration, User, Task, Event, Holiday, Vacation
+from .stats import make_stats
+from .estimates import task_efforts
+from .models import Sync, Iteration, User, Task, Event, Holiday, Vacation, Stat
 
 ### GLOBALS
 SYNC_BATCH = 100
@@ -45,24 +44,33 @@ def _complex_query(values, model, columns):
             ors.append(db.and_(*ands))
         return db.or_(*ors)
 
-def _batch_sync(most_recent_update, batch, model, ext_id='ext_id',
-                updated_on='updated_on'):
+def _batch_sync(most_recent_update, batch, model, ident,
+                updated_on='updated_on', task_changes=None):
     '''Sync a batch of models with the database, inserting/updating as needed,
        and return a dict of objects that were created, and the most recent
-       updated_on time'''
+       updated_on time
+
+       NB: batch and task_changes are modified by side-effect, this behavior
+           is relied on.
+       TODO: Consider changing this.
+    '''
     # if no items were sent, bail
     if not batch:
         return {}, most_recent_update
 
-    # setup complex ext_id keys, and force at least 1
-    if not ext_id:
-        raise ValueError('Must specify at least 1 ext_id')
+    # setup complex ident keys, and force at least 1
+    if not ident:
+        raise ValueError('Must specify at least 1 ident')
 
     # filter on multi-column
     for obj in model.query.filter(_complex_query(batch.keys(), model,
-                                                 ext_id)).all():
-        key = _complex_key(obj, ext_id)
+                                                 ident)).all():
+        key = _complex_key(obj, ident)
+        if task_changes not in (None, null) and model is Task:
+            task_changes = _log_task_change(task_changes, obj, batch[key])
         for k,v in batch[key].iteritems():
+            # tasks have side-effects for both stats and simulations
+            # log date-deltas here if asked to
             setattr(obj, k, v)
         batch[key] = obj
 
@@ -70,6 +78,8 @@ def _batch_sync(most_recent_update, batch, model, ext_id='ext_id',
     created = {}
     for key,obj in batch.iteritems():
         if not isinstance(obj, model):
+            if task_changes not in (None, null) and model is Task:
+                task_changes = _log_task_change(task_changes, None, obj)
             obj = model(**obj)
             db.session.add(obj)
             batch[key] = created[key] = obj
@@ -111,7 +121,8 @@ def _record_sync(type_, last_seen):
         db.session.rollback()
         raise
 
-def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
+def _batch_sync_tasks(since, batch, users, iter_ext_ids, events,
+                      task_changes):
     '''Task sync'ing requires sycning users, iterations and events, it's
        enough complexity to warrant a helper function.'''
     # first sync all iterations, then grab the iterations:
@@ -123,7 +134,7 @@ def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
             iters[iter_.ext_id] = iter_
 
     # then sync users -- NB: _batch_sync modifies users
-    _batch_sync(None, users, User, ext_id='email')
+    _batch_sync(None, users, User, 'email')
 
     # then add iterations and users to tasks
     for k,(task, email, iter_ext_id) in batch.iteritems():
@@ -132,7 +143,8 @@ def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
         batch[k] = task
 
     # then sync the tasks themselves -- store this sync, it's the one we want
-    _, task_sync = _batch_sync(since, batch, Task)
+    _, task_sync = _batch_sync(since, batch, Task, 'ext_id',
+                               task_changes=task_changes)
 
     # forceably reset task workdays cache
     for task in batch.itervalues():
@@ -149,16 +161,16 @@ def _batch_sync_tasks(since, batch, users, iter_ext_ids, events):
         new_events[new_key] = ev
 
     # sync events
-    _batch_sync(None, new_events, Event, updated_on='occured_on',
-                ext_id=['type', 'occured_on', 'task_id'])
+    _batch_sync(None, new_events, Event, ['type', 'occured_on', 'task_id'],
+                updated_on='occured_on')
 
-    return task_sync
+    return task_sync, task_changes
 
 def _batch_sync_vacations(vacations, users, updated_dates, all_):
     '''Batch sync holidays and vacations. Update and return a set of new dates
        and a dict of all seen dates, to determine what should be deleted
        dates'''
-    _batch_sync(None, users, User, ext_id='email')
+    _batch_sync(None, users, User, 'email')
     for date, email in vacations.keys():
         user = users[email]
         key = (date, user.id)
@@ -168,7 +180,7 @@ def _batch_sync_vacations(vacations, users, updated_dates, all_):
         vacations[key] = vacation
         all_.add(key)
     created, _ = _batch_sync(None, vacations, Vacation, ['date', 'user_id'],
-                             updated_on=None)
+                                updated_on=None)
     updated_dates |= set(created.keys())
     return updated_dates, all_
 
@@ -189,6 +201,7 @@ def _update_task_net_workdays(*args):
     '''Update a task net_workdays by date/user or just date'''
     query = Task.query
     ors = []
+    task_changes = _task_change_log()
     for arg in args:
         date, user_id = arg, None
         if isinstance(arg, tuple):
@@ -201,11 +214,71 @@ def _update_task_net_workdays(*args):
             ands.append(Task.user_id == user_id)
         ors.append(db.and_(*ands))
 
-    for task in Task.query.filter(db.or_(*ors)):
-        task.cache_workdays(force=True)
+    if ors:
+        for task in Task.query.filter(db.or_(*ors)):
+            task.cache_workdays(force=True)
+            task_changes = _log_task_change(task_changes, task, None)
 
     db.session.commit()
+    return task_changes
 
+def _task_change_log():
+    '''Create an empty task change log dictionary'''
+    return {'stats': {}, 'iterations': {}}
+
+def _log_task_change(task_log, old, new):
+    '''Log dates for user-specifica and iteration-specific changes to a task
+       log dictionary'''
+    old = old.__dict__ if isinstance(old, Task) else (old or {})
+    new = new.__dict__ if isinstance(new, Task) else (new or {})
+    changes, users, iterations, effort_ests = [], [], [], []
+    for key in set(old.keys())|set(new.keys()):
+        for d in (old, new):
+            val = d.get(key)
+            # we need to re-run stats/sims for both sides of any user change
+            if key == 'user':
+                users.append(val.id if val is not None else None)
+            # we need to re-run stats/sims for both sides of any est change
+            elif key == 'effort_est':
+                effort_ests.append(val)
+            # we need to re-run sims for both sides of any iteration change
+            elif key == 'iteration':
+                iterations.append(val.id if val is not None else None)
+            # setup a minable list
+            elif isinstance(val, date):
+                changes.append(val)
+
+    change_since = min(changes) if changes else None
+    if change_since:
+        for user in users:
+            user_log = task_log['stats'].setdefault(user, {})
+            for est in effort_ests:
+                user_log[est] = min(change_since,
+                                    user_log.get(est, change_since))
+        for iter_ in iterations:
+            iters = task_log['iterations']
+            iters[iter_] = min(change_since, iters.get(iter_, change_since))
+
+    return task_log
+
+def _update_stats_and_sims(task_log):
+    '''Update stats and simulations based on logged task changes'''
+    # map users we need to lookup in DB
+    user_lookup, stats = {}, task_log['stats']
+    if stats:
+        for u in User.query.filter(User.id.in_([
+                u for u in stats.keys() if u is not None])).all():
+            user_lookup[u.id] = u
+
+    # update stats for users
+    for user_id,tasks in stats.iteritems():
+        for effort_est,since in tasks.iteritems():
+            users = [user_lookup[user_id]] if user_id else null
+            if users is not null:
+                sync_stats(since=since, users=users, efforts=[effort_est],
+                           record=False)
+
+    # TODO: update sims by iteration part of map
 
 ### EXPOSED METHODS
 def sync():
@@ -215,7 +288,7 @@ def sync():
        ``since``.'''
     last_sync = []
     for meth in ('sync_holidays', 'sync_vacations', 'sync_iterations',
-                 'sync_tasks'):
+                 'sync_tasks', 'sync_stats'):
         sync_res = globals()[meth]()
         if sync_res:
             last_sync.append(sync_res.last_seen_update)
@@ -236,11 +309,11 @@ def sync_iterations(since=null, ids=null, record=null):
         for iteration in pm.iterations(since=since, ids=ids):
             batch[iteration['ext_id']] = iteration
             if len(batch) == SYNC_BATCH:
-                _, since = _batch_sync(since, batch, Iteration)
+                _, since = _batch_sync(since, batch, Iteration, 'ext_id')
                 batch = {}
 
         if len(batch):
-            _, since = _batch_sync(since, batch, Iteration)
+            _, since = _batch_sync(since, batch, Iteration, 'ext_id')
     except Exception:
         db.session.rollback()
         raise
@@ -257,6 +330,7 @@ def sync_tasks(since=null, ids=null, record=null):
     #TODO: networkdays
     since = _sync_since('task') if since is null else since
     record = record if record is not null else (ids is null)
+    task_changes = _task_change_log()
     try:
         batch, users, events, iter_ext_ids = {}, {}, {}, set()
         for task in pm.tasks(since=since, ids=ids):
@@ -285,13 +359,16 @@ def sync_tasks(since=null, ids=null, record=null):
             # NB: we have not associated the iteration yet
             batch[task['ext_id']] = (task, email, iter_ext_id)
             if len(batch) == SYNC_BATCH:
-                since = _batch_sync_tasks(since, batch, users, iter_ext_ids,
-                                          events)
+                since, task_changes = _batch_sync_tasks(since, batch, users,
+                                                        iter_ext_ids, events,
+                                                        task_changes)
                 batch, users, events, iter_ext_ids = {}, {}, {}, set()
 
         if len(batch):
-            since = _batch_sync_tasks(since, batch, users, iter_ext_ids,
-                                      events)
+            since, task_changes = _batch_sync_tasks(since, batch, users,
+                                                    iter_ext_ids, events,
+                                                    task_changes)
+        _update_stats_and_sims(task_changes)
     except Exception:
         db.session.rollback()
         raise
@@ -315,20 +392,20 @@ def sync_holidays(year=None, record=True):
             all_.add(key)
             if len(holidays) == SYNC_BATCH:
                 created, _ = _batch_sync(None, holidays, Holiday, 'date',
-                                         updated_on=None)
+                                            updated_on=None)
                 updated_dates |= set(created.keys())
                 holidays = {}
 
         if len(holidays):
             created, _ = _batch_sync(None, holidays, Holiday, 'date',
-                                     updated_on=None)
+                                        updated_on=None)
             updated_dates |= set(created.keys())
             holidays = {}
 
         # delete old holidays
         updated_dates |= _delete_datish(all_, Holiday, 'date')
         # update tasks
-        _update_task_net_workdays(*updated_dates)
+        _update_stats_and_sims(_update_task_net_workdays(*updated_dates))
     except Exception:
         db.session.rollback()
         raise
@@ -366,7 +443,7 @@ def sync_vacations(email=None, record=True):
         # delete old vacations
         updated_dates |= _delete_datish(all_, Vacation, ['date','user_id'])
         # update tasks
-        _update_task_net_workdays(*updated_dates)
+        _update_stats_and_sims(_update_task_net_workdays(*updated_dates))
     except Exception:
         db.session.rollback()
         raise
@@ -376,5 +453,38 @@ def sync_vacations(email=None, record=True):
         return _record_sync('vacation', datetime.now())
     return None
 
+def sync_stats(since=null, users=null, efforts=null, record=True):
+    '''Sync stats for user (``users``) and effort (``efforts``) combinations,
+       day-over-day since ``since``.'''
+    efforts = task_efforts(user=users) if efforts is null else efforts
+    users = User.query.all() if users is null else users
+    since = _sync_since('task') if since is null else since
+    try:
+        stats = {}
+        for user in users:
+            for effort in efforts:
+                for stat in make_stats(user, effort, since=since):
+                    stat['user_id'] = stat['user'].id
+                    key = (stat['user_id'], stat['effort_est'], stat['as_of'])
+                    stats[key] = stat
+
+                    if len(stats) == SYNC_BATCH:
+                        _, sync = _batch_sync(since, stats, Stat,
+                                              ['user_id', 'effort_est', 'as_of'],
+                                              updated_on=None)
+                        stats = {}
+        if len(stats):
+            _, sync = _batch_sync(since, stats, Stat,
+                                  ['user_id', 'effort_est', 'as_of'],
+                                  updated_on=None)
+            stats = {}
+    except Exception:
+        db.session.rollback()
+        raise
+
+    if record:
+        return _record_sync('vacation', since)
+    return None
+
 __all__ = ['SYNC_BATCH', 'sync', 'sync_iterations', 'sync_tasks',
-           'sync_holidays', 'sync_vacations']
+           'sync_holidays', 'sync_vacations', 'sync_stats']
