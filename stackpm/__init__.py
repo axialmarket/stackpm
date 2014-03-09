@@ -25,4 +25,4 @@ import estimates
 import sync
 
 __all__ = ['null', 'stackpm_app', 'config', 'db', 'models', 'fields',
-           'links', 'sync', 'stats', 'workdays', 'estimates']
+           'links', 'sync', 'stats', 'estimates']
