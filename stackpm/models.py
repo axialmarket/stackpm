@@ -5,6 +5,10 @@
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
+### STANDARD LIBRARY IMPORTS
+import copy
+from datetime import datetime
+
 ### 3RD PARTY IMPORTS
 from workdays import networkdays
 
@@ -12,6 +16,20 @@ from workdays import networkdays
 from . import db
 from .fields import JSONField
 
+def _copy_as_of(obj, dels=tuple(), relateds=tuple()):
+    '''Return a dict copy of `obj`, removing `dels` and making sure `relateds`
+       objects are fully copied'''
+    cp = copy.deepcopy(obj.__dict__)
+    for del_ in tuple(dels) + tuple(['_sa_instance_state']):
+        del cp[del_]
+    for related in relateds:
+        related_obj = getattr(obj, related)
+        cp['_'.join([related, 'id'])] = related_obj.id
+        cp[related] = related_obj
+
+    return cp
+
+### EXPOSED CLASSES
 class User(db.Model):
     '''Model to map local usage to 3rd party tool like Jira
 
@@ -76,6 +94,35 @@ class Iteration(db.Model):
     def __repr__(self):
         return '<Iteration {}>'.format(self.name)
 
+    def as_of(self, dt=None):
+        '''Return a dictionary representation of self as it existed on date
+           `dt`.
+
+            TODO: Consider returning an object, rather than a dict
+        '''
+        # if we're asking for a date before the iteration was created, return None
+        dt = dt or datetime.now()
+        if dt < self.created_on:
+            return None
+        cp = _copy_as_of(self)
+        cp['tasks'] = []
+        change_map = {'estimate-change': 'effort_est'}
+        for e in self.events:
+            if e.occured_on >= dt:
+                changed = change_map.get(e.type)
+                if changed and e.task is None:
+                    cp[changed] = getattr(e, '_'.join(['from', changed]))
+
+        # re-roll tasks
+        for task in Task.query.join(Event.task).filter(db.or_(
+                Task.iteration == self, Event.from_iteration == self,
+                Event.iteration == self)).group_by(Task).all():
+            task_on_dt = task.as_of(dt)
+            if task_on_dt and task_on_dt['iteration'].id == self.id:
+                cp['tasks'].append(task_on_dt)
+
+        return cp
+
 # m2m self-join through table for dependency tracking between tasks
 task_dependencies = db.Table('task_dependency', db.metadata,
                              db.Column('blocks_id', db.Integer,
@@ -107,7 +154,6 @@ class Task(db.Model):
     started_on = db.Column(db.DateTime, nullable=True)
     dev_done_on = db.Column(db.DateTime, nullable=True)
     prod_done_on = db.Column(db.DateTime, nullable=True)
-    added_to_iteration_on = db.Column(db.DateTime, nullable=True)
     effort_est = db.Column(db.String(50), nullable=True)
 
     # computed and cached information, will change with vacations
@@ -119,6 +165,7 @@ class Task(db.Model):
     prod_done_workseconds = db.Column(db.Integer, nullable=True)
 
     resolution = db.Column(db.String(50), nullable=True)
+    rank = db.Column(db.Integer, nullable=True)
 
     # number of times through "testing" status
     round_trips = db.Column(db.Integer, nullable=True)
@@ -147,6 +194,27 @@ class Task(db.Model):
                 elif force:
                     setattr(self, cache, None)
         return self.dev_done_workdays, self.prod_done_workdays
+
+    def as_of(self, dt=None):
+        '''Return a dictionary representation of self as it existed on date
+           `dt`.
+
+            TODO: Consider returning an object, rather than a dict
+        '''
+        # if we're asking for a date before the card was created, return None
+        dt = dt or datetime.now()
+        if dt < self.created_on:
+            return None
+        cp = _copy_as_of(self, relateds=['iteration', 'user'])
+        change_map = {'iteration-change': 'iteration',
+                      'estimate-change': 'effort_est',
+                      'user-change': 'user'}
+        for e in self.events:
+            if e.occured_on >= dt:
+                changed = change_map.get(e.type)
+                if changed:
+                    cp[changed] = getattr(e, '_'.join(['from', changed]))
+        return cp
 
 class Stat(db.Model):
     '''Model of cached statistics about deliveries by estimate
@@ -191,6 +259,7 @@ class Stat(db.Model):
     def __repr__(self):
         return '<Stat for {} at {} est>'.format(self.user, self.effort_est)
 
+#TODO: rank changes matter too
 class Event(db.Model):
     '''Model for observed events that require notification'''
     id = db.Column(db.Integer, primary_key=True)
@@ -245,6 +314,11 @@ class Event(db.Model):
         return '<Event {} on "{}" id: {}>'.format(self.type, self.task.name,
                                                   self.id)
 
+# many-to-many for users <> simulation
+simulation_users = db.Table('simulation_users', db.metadata,
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
+    db.Column('simulation_id', db.Integer, db.ForeignKey('simulation.id')))
+
 class Simulation(db.Model):
     '''Model to group all data-points in a simulation.
 
@@ -253,17 +327,19 @@ class Simulation(db.Model):
        as though it was run on day 2, simulation_on would be day 2.'''
     id = db.Column(db.Integer, primary_key=True)
     simulation_on = db.Column(db.DateTime, nullable=False)
-
     iteration_id = db.Column(db.Integer, db.ForeignKey('iteration.id'),
                              nullable=False)
     iteration = db.relationship('Iteration', backref='simulations')
+    users = db.relationship("User", secondary=simulation_users,
+                            backref="simulations")
+
+    algorithm = db.Column(db.String(50), nullable=False)
+    plays = db.Column(db.Integer, nullable=False)
+    earliest_date = db.Column(db.DateTime, nullable=True)
+    latest_date = db.Column(db.DateTime, nullable=True)
 
     data = db.Column(JSONField, nullable=True)
-
-    def __init__(self, simulation_on, iteration, data):
-        self.simulation_on = simulation_on
-        self.iteration = iteration
-        self.data = data
+    errors = db.Column(JSONField, nullable=True)
 
     def __repr__(self):
         return '<Simulation of {} from {}>'.format(self.iteration,

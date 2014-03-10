@@ -62,11 +62,11 @@ class Connector(object):
             'name': 'Summary',
             'created_on': 'Created',
             'updated_on': 'Updated',
-            'effort_est': self.config['effort_estimate_field']
+            'rank': 'Rank',
+            'effort_est': self.config['effort_estimate_field'],
         }
         self.__iteration_map_raw = _make_map(self.__base_map, {
             'team': 'Project.key',
-            'rank': 'Rank',
             'value_est': self.config['value_estimate_field'],
         })
         self.__task_map_raw = _make_map(self.__base_map, {
