@@ -104,6 +104,9 @@ class Iteration(db.Model):
         dt = dt or datetime.now()
         if dt < self.created_on:
             return None
+
+        # hack to get around copying list bug with SQLA
+        del self.events, self.tasks
         cp = _copy_as_of(self)
         cp['tasks'] = []
         change_map = {'estimate-change': 'effort_est'}
@@ -205,7 +208,21 @@ class Task(db.Model):
         dt = dt or datetime.now()
         if dt < self.created_on:
             return None
+
+        # hack to get around copying list bug with SQLA
+        del self.events
         cp = _copy_as_of(self, relateds=['iteration', 'user'])
+
+        # update date fields
+        if cp['started_on'] and dt > cp['started_on']:
+            cp['started_on'] = None
+        for key in ('dev_done', 'prod_done'):
+            on = cp['_'.join([key, 'on'])]
+            if on and dt < on:
+                cp['_'.join([key, 'on'])] = None
+                cp['_'.join([key, 'workdays'])] = None
+
+        # iterate events
         change_map = {'iteration-change': 'iteration',
                       'estimate-change': 'effort_est',
                       'user-change': 'user'}

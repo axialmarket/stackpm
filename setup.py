@@ -22,6 +22,6 @@ setup(
     license='3-BSD',
     description='Stack Prioritization and Forecasting Utility',
     long_description=open('./README.rst').read(),
-    requires=['dateutil', 'flask', 'flask.ext.sqlalchemy', 'numpy',
+    requires=['dateutil', 'flask', 'flask.ext.sqlalchemy', 'numpy>=1.7.0',
               'requests', 'betterconfig', 'workdays']
 )

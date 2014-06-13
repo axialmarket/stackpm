@@ -1,19 +1,21 @@
 '''stackpm/stats.py -- API for computing stats
 
-   functions: make_stats
+   functions: make_stats, forecast
    @author: Matthew Story <matt.story@axial.net>
    @license: BSD 3-Clause (see LICENSE.txt)'''
 
 ### STANDARD LIBRARY IMPORTS
 from datetime import datetime, timedelta
 import math
+import random
 
 ### 3RD PARTY IMPORTS
 import numpy
+from workdays import workday, networkdays
 
 ### INTERNAL IMPORTS
 from . import null, db, config
-from .models import Task, Stat
+from .models import Task, Stat, Holiday, Vacation
 
 ### INTERNAL METHODS
 def _default_stat(user, est, as_of):
@@ -147,3 +149,145 @@ def make_stats(user, est, since=null, until=null):
                 stat.update({'_'.join([kind, k]):v for k,v in kind_stats.iteritems()})
 
             yield stat
+
+def forecast(iter_, on_date, to_date=None, algorithm=None, plays=None,
+             start_dates=None):
+    '''Simulate a project delivery date from `on_date` to `to_date`, `plays`
+       times, using the forecasting method `algorithm`'''
+    '''TODO: fix
+    forecast_cfg = config.get('forecast', {})
+    method = method or forecast_cfg.get('algorithm', 'monte-carlo')
+    to_date = to_date or on_date
+    start_dates = start_dates or {} # user_id => start_date
+    plays = plays or forecast_cfg.get('plays', 1000)
+    halflife = float(config.get('forecast', {}).get('halflife', 30))
+    evidence = {}
+
+    # setup everything we need to run a simulation
+    holidays = {h.date for h in Holiday.query.all()}
+
+    # we don't yet support simulation for unstarted projects
+    for day in xrange((to_date - on_date).days + 1):
+        day = since + timedelta(days=day)
+        simulation = {'simulation_on': day, 'iteration': iter_,
+                      'users': users, 'algorithm': algorithm,
+                      'plays': plays, 'earliest_date': earliest}
+        iter_on_day, users = iter_.as_of(day), users
+        tasks = iter_['tasks']
+        for task in tasks:
+            u_evidence = evidence.setdefault(task['user']id, {})
+            u_evidence['user'] = task['user']
+            u_evidence.setdefault('start_date',
+                                  start_dates.get(task['user'].id))
+
+            # set earliest
+            if task['started_on'] and (
+                    u_evidence['start_date'] is None or \
+                    task['started_on'] < u_evidence['start_date']:
+                u_evidence['start_date'] = task['started_on']
+
+            # set prod done and discard if task is done
+            if task['prod_done_on']:
+                if u_evidence.get('last_done') and \
+                        task['prod_done_on'] > u_evidence.get('last_done')):
+                    u_evidence['last_done'] = task['last_done']
+                continue
+
+            ests = u_evidence.setdefault('evidence', {})
+            if task['prod_done_on'] is None:
+                if ests.get(task['effort_est']) is None:
+                    ests[task['effort_est']] = []
+                    for task in Task.query.filter(db.and_(
+                            Task.prod_done_workdays != None,
+                            Task.prod_done_workdays != 0,
+                            Task.dev_done_workdays != None,
+                            Task.dev_done_workdays != 0,
+                            Task.prod_done_on <= day,
+                            Task.user == task['user'],
+                            Task.effort_est == task['effort_est'])).order_by(
+                                Task.started_on):
+                        ests[task['effort_est']].append(
+                            (task['started_on'], (
+                                task['dev_done_workdays'],
+                                task['prod_done_workdays'])))
+
+                    # cannot simulate with no history, error and continue
+                    if not ests:
+                        simulation['errors'] = {
+                            'error': 'Cannot Simulate, No History',
+                            'user': task['user'],
+                            'est': task['effort_est'],
+                        }
+                        yield simulation
+                        continue
+
+            if u_evidence.get('vacations') is None:
+                u_evidence['vacations'] = set(task['user'].vacations)
+
+        # can't simulate without users, and start dates for each user
+        users = [e['user'] for e in evidence.values()]
+        if not users or set([u.id for u in users]) != set([i for i in earliest]):
+            continue
+
+        # setup decay for day
+        weighted_evidence = {}
+        for u_id, u_evidence in evidence.iteritems():
+            last_done = u_evidence.get('last_done')
+            # start date is earliest started, or latest finished
+            if last_done and last_done > u_evidence['start_date']:
+                u_evidence['start_date'] = last_done
+            elif not last_done:
+                u_evidence['last_done'] = u_evidence['start_date']
+
+            u_weighted = weighted_evidence.setdefault(u_id, {})
+            for est,items in u_evidence['evidence']:
+                u_weighted[est] = _sequence_ewma(day, items, halflife)
+
+        results = []
+        # simulate ``plays`` times
+        for i in xrange(plays):
+            timeline = {}
+            for task in tasks:
+                user = task['user']
+                timeline.setdefault(user.id, (evidence[user.id]['start_date'],
+                                              evidence[user.id]['last_done']))
+
+                relevant = []
+                so_far = networkdays(task['started_on'], day)
+                if task['dev_done_on']:
+                    timeline[0][0] = max(timeline[0][0], task['dev_done_on'])
+
+                    # only grab evidence that is further out than where we
+                    # already are
+                    relevant = filter(
+                        lambda x: x[1]>=so_far and x[0]>=task['dev_done_workdays'],
+                        weighted_evidence[user.id][task['effort_est']])
+
+                else:
+                    so_far = networkdays(task['started_on'], day)
+                    relevant = filter(
+                        lambda x: x[0]>=so_far,
+                        weighted_evidence[user.id][task['effort_est']])
+
+                # if no relevant data applies, error for now
+                if not relevant:
+                    simulation['errors'] = {
+                        'error': 'Cannot Simulate, Outlier',
+                        'user': task['user'],
+                        'est': task['effort_est'],
+                        'networkdays': so_far
+                    }
+                    yield simulation
+                    continue
+
+                #TODO: ewma solution
+                dev_done, prod_done = numpy.random.choice(r[0] for r in relevant,
+                                                          p=r[1] for r in relevant)
+                days_off = holidays|evidence[user.id]['vacations']
+                timeline[user.id][1] = workday(timeline[0], prod_done,
+                                               holidays=days_off)
+                if not task['dev_done_on']:
+                    timeline[user.id][0] = workday(timeline[user.id][0], dev_done,
+                                                   holidays=days_off)
+    '''
+    pass
